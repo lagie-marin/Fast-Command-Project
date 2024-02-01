@@ -11,4 +11,4 @@ cd lib/my
 make
 make clean
 cd ../..
-echo lib/my/*.a >> .gitignore
+echo lib/my/libmy.a >> .gitignore
