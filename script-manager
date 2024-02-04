@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 PING_TARGET="www.google.com"
 #Vérifie si l'utilisateur est connecter à internet, si ce n'est pas le cas
