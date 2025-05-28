@@ -1,4 +1,35 @@
 #!/bin/bash
+################################################################################
+# Script: fimport
+# Description: 
+#   Utilitaire pour importer des fonctions préenregistrées dans un projet.
+#   Ce script récupère des fonctions à partir d'un fichier JSON centralisé
+#   et les intègre dans le projet courant avec toutes leurs dépendances.
+#
+# Fonctionnalités:
+#   - Détection automatique du langage de programmation du projet
+#   - Importation de fonctions avec leurs dépendances
+#   - Importation des fichiers d'en-tête associés
+#   - Importation des macros nécessaires
+#   - Structuration automatique du projet (création des dossiers src, include)
+#   - Vérification de compatibilité de langage
+#
+# Utilisation: 
+#   ./fimport <nom_fonction> [<nom_fonction> ...]
+#
+# Arguments:
+#   nom_fonction   Nom de la fonction à importer (plusieurs noms possibles)
+#
+# Prérequis:
+#   - jq doit être installé (sudo apt install jq)
+#   - Fichier JSON d'export ($HOME/.fcp/functions_exports.json)
+#
+# Configuration:
+#   Un fichier fexport_config.json peut être utilisé pour spécifier le langage
+#   du projet. Si ce fichier n'existe pas, le script tente de détecter le
+#   langage automatiquement.
+#
+################################################################################
 
 # Vérifie que jq est installé
 if ! command -v jq &> /dev/null; then
@@ -6,8 +37,10 @@ if ! command -v jq &> /dev/null; then
     exit 1
 fi
 
-# Définit le chemin du fichier JSON
+# Définit les chemins des fichiers de configuration
 JSON_FILE="$HOME/.fcp/functions_exports.json"
+project_config_dir="$(pwd)/.fcp"
+current_language_file="$project_config_dir/.current_language"
 
 # Vérifie que le fichier JSON existe
 if [ ! -f "$JSON_FILE" ]; then
@@ -22,29 +55,19 @@ if [ $# -lt 1 ]; then
 fi
 
 # Détecte le langage du projet courant
-if [ -f "fexport_config.json" ]; then
-    CURRENT_LANG=$(jq -r '.language' fexport_config.json)
+if [ -f "$current_language_file" ]; then
+    CURRENT_LANG=$(cat "$current_language_file")
+    echo "Langage du projet (depuis $current_language_file): $CURRENT_LANG"
 else
-    # Tente de détecter le langage en fonction des extensions de fichier
-    if [ -n "$(find . -maxdepth 2 -name "*.c" | head -1)" ]; then
-        CURRENT_LANG="c"
-    elif [ -n "$(find . -maxdepth 2 -name "*.cpp" | head -1)" ]; then
-        CURRENT_LANG="cpp"
-    elif [ -n "$(find . -maxdepth 2 -name "*.py" | head -1)" ]; then
-        CURRENT_LANG="python"
-    elif [ -n "$(find . -maxdepth 2 -name "*.js" | head -1)" ]; then
-        CURRENT_LANG="javascript"
-    else
-        echo "Erreur: Impossible de détecter le langage du projet."
-        echo "Créez un fichier fexport_config.json avec le langage du projet."
-        exit 1
-    fi
+    echo "Erreur: Fichier de langage non trouvé: $current_language_file"
+    echo "Créez ce fichier avec le nom du langage (ex: 'c', 'cpp', etc.)"
+    exit 1
 fi
 
 echo "Langage du projet: $CURRENT_LANG"
 
-# Récupère le langage du fichier JSON
-JSON_LANG=$(jq -r '.language' "$JSON_FILE")
+# Récupère le langage du fichier JSON - modification pour prendre la première clé
+JSON_LANG=$(jq -r 'keys[0]' "$JSON_FILE")
 
 # Vérifie que les langages correspondent
 if [ "$CURRENT_LANG" != "$JSON_LANG" ]; then
@@ -55,13 +78,22 @@ fi
 # Crée les dossiers nécessaires
 mkdir -p src include
 
-# Fonction pour importer une fonction et ses dépendances
+# Fonction: import_function
+# Description:
+#   Importe une fonction à partir du fichier JSON avec toutes ses dépendances
+#   Les dépendances sont également importées récursivement
+# Paramètres:
+#   $1 - Le nom de la fonction à importer
+#   $2 - Liste des fonctions déjà importées (pour éviter les imports en double)
+# Retour:
+#   0 si la fonction est importée avec succès
+#   1 si la fonction n'existe pas dans le fichier JSON
 import_function() {
     local func_name="$1"
     local already_imported="$2"
     
-    # Vérifie si la fonction existe dans le JSON
-    if ! jq -e --arg name "$func_name" '.functions[$name]' "$JSON_FILE" > /dev/null 2>&1; then
+    # Vérifie si la fonction existe dans le JSON - avec la structure corrigée
+    if ! jq -e --arg name "$func_name" --arg lang "$CURRENT_LANG" '.[$lang].functions[$name]' "$JSON_FILE" > /dev/null 2>&1; then
         echo "Avertissement: Fonction '$func_name' introuvable dans le fichier JSON."
         return 1
     fi
@@ -77,10 +109,10 @@ import_function() {
     echo "Importation de la fonction: $func_name"
     
     # Récupère les informations de la fonction
-    local file_path=$(jq -r --arg name "$func_name" '.functions[$name].file_path' "$JSON_FILE")
-    local content=$(jq -r --arg name "$func_name" '.functions[$name].content' "$JSON_FILE")
-    local includes=$(jq -r --arg name "$func_name" '.functions[$name].includes' "$JSON_FILE")
-    local dependencies=$(jq -r --arg name "$func_name" '.functions[$name].dependencies' "$JSON_FILE")
+    local file_path=$(jq -r --arg name "$func_name" --arg lang "$CURRENT_LANG" '.[$lang].functions[$name].file_path' "$JSON_FILE")
+    local content=$(jq -r --arg name "$func_name" --arg lang "$CURRENT_LANG" '.[$lang].functions[$name].content' "$JSON_FILE")
+    local includes=$(jq -r --arg name "$func_name" --arg lang "$CURRENT_LANG" '.[$lang].functions[$name].includes' "$JSON_FILE")
+    local dependencies=$(jq -r --arg name "$func_name" --arg lang "$CURRENT_LANG" '.[$lang].functions[$name].dependencies // ""' "$JSON_FILE")
     
     # Détermine le nom du fichier de destination
     local basename=$(basename "$file_path")
@@ -119,12 +151,12 @@ import_function() {
     # Ajoute le contenu de la fonction
     echo "$content" >> "$dest_file"
     
-    # Importe les headers nécessaires
+    # Importe les headers nécessaires - avec la structure corrigée
     for inc in $includes; do
         if [ -n "$inc" ]; then
             # Vérifie si le header existe dans le JSON
-            if jq -e --arg path "./include/$inc" '.headers[$path]' "$JSON_FILE" > /dev/null 2>&1; then
-                local header_content=$(jq -r --arg path "./include/$inc" '.headers[$path].content' "$JSON_FILE")
+            if jq -e --arg path "./include/$inc" --arg lang "$CURRENT_LANG" '.[$lang].headers[$path]' "$JSON_FILE" > /dev/null 2>&1; then
+                local header_content=$(jq -r --arg path "./include/$inc" --arg lang "$CURRENT_LANG" '.[$lang].headers[$path].content' "$JSON_FILE")
                 
                 # Crée le fichier header s'il n'existe pas
                 if [ ! -f "include/$inc" ]; then
@@ -136,20 +168,21 @@ import_function() {
         fi
     done
     
-    # Importe les macros nécessaires
+    # Importe les macros nécessaires - avec la structure corrigée
     for macro in $(echo "$dependencies" | tr ' ' '\n' | grep -v "^$"); do
         # Vérifie si c'est une macro
-        if jq -e --arg name "$macro" '.macros[$name]' "$JSON_FILE" > /dev/null 2>&1; then
-            local macro_content=$(jq -r --arg name "$macro" '.macros[$name].content' "$JSON_FILE")
-            local macro_file=$(jq -r --arg name "$macro" '.macros[$name].file' "$JSON_FILE")
+        if jq -e --arg name "$macro" --arg lang "$CURRENT_LANG" '.[$lang].macros[$name]' "$JSON_FILE" > /dev/null 2>&1; then
+            local macro_content=$(jq -r --arg name "$macro" --arg lang "$CURRENT_LANG" '.[$lang].macros[$name].content' "$JSON_FILE")
+            local macro_file=$(jq -r --arg name "$macro" --arg lang "$CURRENT_LANG" '.[$lang].macros[$name].file' "$JSON_FILE")
+            
             local macro_basename=$(basename "$macro_file")
             
             echo "  Importation de la macro: $macro"
             
             # Assure que le header existe et contient la macro
             if [ ! -f "include/$macro_basename" ]; then
-                if jq -e --arg path "$macro_file" '.headers[$path]' "$JSON_FILE" > /dev/null 2>&1; then
-                    local header_content=$(jq -r --arg path "$macro_file" '.headers[$path].content' "$JSON_FILE")
+                if jq -e --arg path "$macro_file" --arg lang "$CURRENT_LANG" '.[$lang].headers[$path]' "$JSON_FILE" > /dev/null 2>&1; then
+                    local header_content=$(jq -r --arg path "$macro_file" --arg lang "$CURRENT_LANG" '.[$lang].headers[$path].content' "$JSON_FILE")
                     echo "  Importation du header pour la macro: $macro_basename"
                     mkdir -p "$(dirname "include/$macro_basename")"
                     echo "$header_content" > "include/$macro_basename"
@@ -158,10 +191,10 @@ import_function() {
         fi
     done
     
-    # Importe récursivement les dépendances
+    # Importe récursivement les dépendances - avec la structure corrigée
     for dep in $(echo "$dependencies" | tr ' ' '\n' | grep -v "^$"); do
         # Vérifie si c'est une fonction et non une macro
-        if jq -e --arg name "$dep" '.functions[$name]' "$JSON_FILE" > /dev/null 2>&1; then
+        if jq -e --arg name "$dep" --arg lang "$CURRENT_LANG" '.[$lang].functions[$name]' "$JSON_FILE" > /dev/null 2>&1; then
             import_function "$dep" "$already_imported"
             already_imported="$already_imported $dep "
         fi
@@ -173,7 +206,8 @@ import_function() {
 # Liste des fonctions importées
 IMPORTED=""
 
-# Importe chaque fonction demandée
+# Programme principal: importe chaque fonction demandée
+# Pour chaque argument fourni, appelle import_function
 for func in "$@"; do
     import_function "$func" "$IMPORTED"
     IMPORTED="$IMPORTED $func "
