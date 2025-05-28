@@ -89,7 +89,7 @@ update_command() {
     # Vérifier si script-manager est installé
     if command -v script-manager &>/dev/null; then
         echo "Running update via script-manager..."
-        if script-manager fexport; then
+        if script-manager fexport rules.json; then
             echo "Update completed successfully!"
         else
             echo "Error: Update failed"

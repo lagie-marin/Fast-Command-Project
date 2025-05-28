@@ -15,7 +15,11 @@
 #   - Vérification de compatibilité de langage
 #
 # Utilisation: 
-#   ./fimport <nom_fonction> [<nom_fonction> ...]
+#   ./fimport [-h] [-u] <nom_fonction> [<nom_fonction> ...]
+#
+# Options:
+#   -h            Affiche cette aide
+#   -u            Met à jour le script à partir du dépôt GitHub
 #
 # Arguments:
 #   nom_fonction   Nom de la fonction à importer (plusieurs noms possibles)
@@ -25,11 +29,79 @@
 #   - Fichier JSON d'export ($HOME/.fcp/functions_exports.json)
 #
 # Configuration:
-#   Un fichier fexport_config.json peut être utilisé pour spécifier le langage
-#   du projet. Si ce fichier n'existe pas, le script tente de détecter le
-#   langage automatiquement.
+#   Un fichier .fcp/.current_language doit exister dans le projet pour
+#   spécifier le langage utilisé.
 #
 ################################################################################
+
+# Fonction pour afficher l'aide
+show_help() {
+    echo "fimport - Utilitaire pour importer des fonctions préenregistrées dans un projet"
+    echo ""
+    echo "Usage: fimport [options] <function_name> [<function_name> ...]"
+    echo ""
+    echo "Options:"
+    echo "  -h                Affiche cette aide"
+    echo "  -u                Met à jour le script à partir du dépôt GitHub"
+    echo ""
+    echo "Arguments:"
+    echo "  function_name     Nom de la fonction à importer (plusieurs noms possibles)"
+    echo ""
+    echo "Description:"
+    echo "  Ce script récupère des fonctions à partir d'un fichier JSON centralisé"
+    echo "  et les intègre dans le projet courant avec toutes leurs dépendances."
+    echo ""
+    echo "Configuration requise:"
+    echo "  - jq doit être installé (sudo apt install jq)"
+    echo "  - Fichier JSON d'export (\$HOME/.fcp/functions_exports.json)"
+    echo "  - Fichier de langage du projet (./.fcp/.current_language)"
+    echo ""
+    echo "Exemples:"
+    echo "  fimport ma_fonction            # Importe une seule fonction"
+    echo "  fimport func1 func2 func3      # Importe plusieurs fonctions"
+    exit 0
+}
+
+# Fonction pour mettre à jour le script
+# Fonction: update_command
+update_script() {
+    echo "Checking for updates..."
+    
+    # Vérifier si script-manager est installé
+    if command -v script-manager &>/dev/null; then
+        echo "Running update via script-manager..."
+        if script-manager fimport; then
+            echo "Update completed successfully!"
+        else
+            echo "Error: Update failed"
+            return 1
+        fi
+    else
+        echo "Error: script-manager not found"
+        echo "Please install script-manager first"
+        return 1
+    fi
+}
+
+# Traitement des options
+while getopts "hu" opt; do
+    case $opt in
+        h)
+            show_help
+            ;;
+        u)
+            update_script
+            ;;
+        \?)
+            echo "Option invalide: -$OPTARG" >&2
+            echo "Utilisez -h pour afficher l'aide." >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Ajuste les arguments pour ignorer les options traitées
+shift $((OPTIND-1))
 
 # Vérifie que jq est installé
 if ! command -v jq &> /dev/null; then
@@ -50,17 +122,9 @@ fi
 
 # Vérifie les arguments
 if [ $# -lt 1 ]; then
-    echo "Usage: fimport <function_name> [<function_name> ...]"
-    exit 1
-fi
-
-# Détecte le langage du projet courant
-if [ -f "$current_language_file" ]; then
-    CURRENT_LANG=$(cat "$current_language_file")
-    echo "Langage du projet (depuis $current_language_file): $CURRENT_LANG"
-else
-    echo "Erreur: Fichier de langage non trouvé: $current_language_file"
-    echo "Créez ce fichier avec le nom du langage (ex: 'c', 'cpp', etc.)"
+    echo "Erreur: Aucune fonction spécifiée."
+    echo "Usage: fimport [options] <function_name> [<function_name> ...]"
+    echo "Utilisez -h pour afficher l'aide."
     exit 1
 fi
 
