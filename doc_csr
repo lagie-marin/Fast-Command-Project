@@ -1,0 +1,291 @@
+#!/bin/bash
+
+# Colors for output formatting
+RED='\e[31m'
+GREEN='\e[32m'
+YELLOW='\e[33m'
+BLUE='\e[34m'
+MAGENTA='\e[35m'
+CYAN='\e[36m'
+BOLD='\e[1m'
+ITALIC='\e[3m'
+UNDERLINE='\e[4m'
+PINK='\e[38;5;205m'
+NC='\e[0m' # No Color
+
+# Formatting functions
+title() {
+    echo -e "${RED}${BOLD}$1${NC}"
+}
+
+bold() {
+    echo -e "${BOLD}$1${NC}"
+}
+
+color() {
+    # Syntax highlighting for code
+    local code=$1
+    # Highlight keywords
+    code=$(echo "$code" | sed -E "s/\b(if|else|for|while|return|int|char|void|struct|typedef|const|static|extern|sizeof|switch|case|break|continue|default|do|float|double)\b/${YELLOW}&${NC}/g")
+    # Highlight strings
+    code=$(echo "$code" | sed -E "s/(\"[^\"]*\")/${GREEN}&${NC}/g")
+    # Highlight comments
+    code=$(echo "$code" | sed -E "s/(\/\/.*|\/\*.*\*\/)/${BLUE}&${NC}/g")
+    # Highlight function names
+    code=$(echo "$code" | sed -E "s/([a-zA-Z_][a-zA-Z0-9_]*)\(/${MAGENTA}\1${NC}(/g")
+    echo -e "$code"
+}
+
+warn() {
+    echo -e "${YELLOW}$1${NC}"
+}
+
+line() {
+    echo -e "${CYAN}$1${NC}"
+}
+
+pts() {
+    echo -e "${BOLD}•${NC} $1"
+}
+
+ok() {
+    echo -e "${GREEN}OK${NC}"
+}
+
+incorrect() {
+    echo -e "${RED}INCORRECT${NC}"
+}
+
+pink() {
+    echo -e "${PINK}$1${NC}"
+}
+
+italic() {
+    echo -e "${ITALIC}$1${NC}"
+}
+
+# Function to display help information
+show_help() {
+    echo -e "${BOLD}Usage:${NC} doc_csr [OPTION] [CODE...]"
+    echo -e "Show documentation for coding style error codes."
+    echo -e ""
+    echo -e "${BOLD}Options:${NC}"
+    echo -e "  -h\t\tDisplay this help message"
+    echo -e "  -e CODE...\tShow documentation for specified error codes"
+    echo -e "  -l\t\tList all available error codes"
+    echo -e "  -r FILE\tRegister a PDF file as a reference and convert it to TXT"
+    echo -e ""
+    echo -e "${BOLD}Examples:${NC}"
+    echo -e "  doc_csr -e C-O1"
+    echo -e "  doc_csr -e C-G5 C-A1"
+    echo -e "  doc_csr -l"
+    echo -e "  doc_csr -r coding_style.pdf"
+    exit 0
+}
+
+# Create FCP directory structure
+ensure_fcp_dir() {
+    local fcp_dir="$HOME/.fcp"
+    local docs_dir="$fcp_dir/docs"
+    
+    if [ ! -d "$fcp_dir" ]; then
+        mkdir -p "$fcp_dir"
+    fi
+    
+    if [ ! -d "$docs_dir" ]; then
+        mkdir -p "$docs_dir"
+    fi
+    
+    # Initialize JSON file if it doesn't exist
+    if [ ! -f "$fcp_dir/files.json" ]; then
+        echo '{"files":[]}' > "$fcp_dir/files.json"
+    fi
+}
+
+# Add file to JSON registry
+add_file_to_registry() {
+    local name=$(basename "$1" .txt)
+    local path="$1"
+    local original="$2"
+    local date_added=$(date +"%Y-%m-%d")
+    local json_file="$HOME/.fcp/files.json"
+    
+    # Check if file already exists in registry
+    if jq -e ".files[] | select(.path == \"$path\")" "$json_file" > /dev/null; then
+        echo -e "${ITALIC}Note:${NC} $path is already registered."
+        return 0
+    fi
+    
+    # Add new file entry to JSON
+    local temp_file=$(mktemp)
+    jq ".files += [{\"name\": \"$name\", \"path\": \"$path\", \"original\": \"$original\", \"date_added\": \"$date_added\"}]" "$json_file" > "$temp_file"
+    mv "$temp_file" "$json_file"
+    
+    echo -e "${GREEN}Registered${NC} $name in file registry."
+    return 0
+}
+
+# Get file paths from JSON registry
+get_registered_files() {
+    local json_file="$HOME/.fcp/files.json"
+    
+    if [ ! -f "$json_file" ]; then
+        echo ""
+        return 1
+    fi
+    
+    # Extract paths and join with colons
+    local paths=$(jq -r '.files[].path' "$json_file" | paste -sd ":" -)
+    echo "$paths"
+    return 0
+}
+
+# Function to convert PDF to TXT and store original PDF
+convert_pdf_to_txt() {
+    local pdf_file=$1
+    local file_name=$(basename "$pdf_file" .pdf)
+    local txt_file="$HOME/.fcp/docs/${file_name}.txt"
+    local pdf_copy="$HOME/.fcp/docs/${file_name}_original.pdf"
+    
+    ensure_fcp_dir
+    
+    if [ ! -f "$pdf_file" ]; then
+        echo -e "${RED}Error:${NC} File $pdf_file does not exist."
+        exit 1
+    fi
+    
+    # Copy the original PDF file to FCP directory
+    cp "$pdf_file" "$pdf_copy"
+    
+    if command -v pdftotext >/dev/null 2>&1; then
+        pdftotext "$pdf_file" "$txt_file"
+        echo -e "${GREEN}Converted${NC} $pdf_file to $txt_file"
+        echo -e "${GREEN}Copied${NC} original to $pdf_copy"
+        
+        # Register the new file with both paths
+        add_file_to_registry "$txt_file" "$pdf_copy"
+    else
+        echo -e "${RED}Error:${NC} pdftotext is not installed. Please install poppler-utils."
+        exit 1
+    fi
+}
+
+# Function to register a reference file
+register_file() {
+    local file=$1
+    
+    # Check if it's a PDF file
+    if [[ "$file" != *.pdf ]]; then
+        echo -e "${RED}Error:${NC} Only PDF files can be registered."
+        exit 1
+    fi
+    
+    # Get the absolute path
+    file=$(realpath "$file")
+    
+    # Convert PDF to TXT (will automatically register it)
+    convert_pdf_to_txt "$file"
+}
+
+# Function to find and display error documentation
+show_error_doc() {
+    local error_code=$1
+    local config_files=$(get_registered_files)
+
+    if [ -z "$config_files" ]; then
+        echo -e "${RED}Error:${NC} No reference files registered. Use -r option to register a file."
+        exit 1
+    fi
+
+    # Split the list by colon (:)
+    IFS=':' read -ra files <<< "$config_files"
+
+    # Iterate through registered files to find the error
+    for file in "${files[@]}"; do
+        if [ -f "$file" ]; then
+            # First check if the error code exists in the file at all
+            if grep -q "$error_code" "$file"; then
+                # Use grep and sed to extract the error section
+                local start_line=$(grep -n "$error_code" "$file" | head -1 | cut -d: -f1)
+                if [ -n "$start_line" ]; then
+                    # Find the next error code line
+                    local next_line=$(tail -n +$((start_line + 1)) "$file" | grep -n "^C-[A-Z][0-9]" | head -1 | cut -d: -f1)
+                    
+                    # If next_line is empty, use the end of the file
+                    if [ -z "$next_line" ]; then
+                        local error_entry=$(tail -n +$start_line "$file")
+                    else
+                        local error_entry=$(sed -n "${start_line},$((start_line + next_line - 1))p" "$file")
+                    fi
+                    
+                    # Extract name and description
+                    local first_line=$(echo "$error_entry" | head -1)
+                    local error_name=$(echo "$first_line" | sed -E "s/^$error_code *-* *//")
+                    local error_description=$(echo "$error_entry" | tail -n +2 | sed 's/^[[:space:]]*//')
+                    
+                    echo -e "${BOLD}Error Code:${NC} ${error_code}"
+                    echo -e "${BOLD}Name:${NC} ${error_name}"
+                    echo -e "${BOLD}Description:${NC} ${error_description}"
+                    return 0
+                fi
+            fi
+        fi
+    done
+
+    echo -e "${RED}Error:${NC} ${error_code} not found in registered files."
+    exit 1
+}
+
+# Function to list all available error codes
+list_all_error_codes() {
+    local config_files=$(get_registered_files)
+    
+    if [ -z "$config_files" ]; then
+        echo -e "${RED}Error:${NC} No reference files registered. Use -r option to register a file."
+        exit 1
+    fi
+    
+    echo -e "${BOLD}Available error codes:${NC}"
+    echo ""
+    
+    # Split the list by colon (:)
+    IFS=':' read -ra files <<< "$config_files"
+    
+    # Use the first file to extract all error codes
+    local first_file="${files[0]}"
+    if [ -f "$first_file" ]; then
+        # Extract all error codes and their descriptions
+        grep -o 'C-[A-Z][0-9]\+.*' "$first_file" | while IFS= read -r line; do
+            local error_code=$(echo "$line" | grep -o 'C-[A-Z][0-9]\+')
+            local error_name=$(echo "$line" | sed -E "s/C-[A-Z][0-9]+ *- *//" | sed 's/^[[:space:]]*//')
+            echo -e "${BOLD}${error_code}${NC} - ${error_name}"
+        done
+    else
+        echo -e "${RED}Error:${NC} Cannot access reference file."
+        exit 1
+    fi
+}
+
+# Check if jq is installed
+if ! command -v jq &> /dev/null; then
+    echo -e "${RED}Error:${NC} jq is required but not installed. Please install jq."
+    exit 1
+fi
+
+# Main script logic
+if [ "$1" == "-h" ]; then
+    show_help
+elif [ "$1" == "-r" ] && [ ! -z "$2" ]; then
+    register_file "$2"
+elif [ "$1" == "-l" ]; then
+    list_all_error_codes
+elif [ "$1" == "-e" ] && [ ! -z "$2" ]; then
+    # Shift to skip the -e option
+    shift
+    # Process all remaining arguments as error codes
+    for error_code in "$@"; do
+        show_error_doc "$error_code"
+    done
+else
+    show_help
+fi
