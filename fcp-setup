@@ -12,9 +12,6 @@ if ! grep -q "fimport_completion.bash" "$HOME/.bashrc"; then
     echo "if [ -d \"\$HOME/.fcp/bin\" ] ; then" >> "$HOME/.bashrc"
     echo "    export PATH=\"\$HOME/.fcp/bin:\$PATH\"" >> "$HOME/.bashrc"
     echo "fi" >> "$HOME/.bashrc"
-    echo "if [ -f \"\$HOME/.fcp/bin/fimport_completion.bash\" ]; then" >> "$HOME/.bashrc"
-    echo "    source \"\$HOME/.fcp/bin/fimport_completion.bash\"" >> "$HOME/.bashrc"
-    echo "fi" >> "$HOME/.bashrc"
     
     echo "Configuration ajoutée à ~/.bashrc"
 else
