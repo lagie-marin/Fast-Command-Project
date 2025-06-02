@@ -20,4 +20,3 @@ fi
 
 echo "Installation terminée. Pour activer l'autocomplétion immédiatement, exécutez:"
 echo "  source ~/.bashrc"
-echo "  source ~/.fcp/bin/fimport_completion.bash"
