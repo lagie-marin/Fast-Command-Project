@@ -7,16 +7,16 @@ echo "Configuration de l'environnement FCP..."
 mkdir -p "$HOME/.fcp/bin"
 
 # Vérifie si la configuration est déjà dans .bashrc
-if ! grep -q "fimport_completion.bash" "$HOME/.bashrc"; then
+if ! grep -q "Configuration Fast Command Project (FCP)" "$HOME/.bashrc"; then
     echo -e "\n# Configuration Fast Command Project (FCP)" >> "$HOME/.bashrc"
     echo "if [ -d \"\$HOME/.fcp/bin\" ] ; then" >> "$HOME/.bashrc"
     echo "    export PATH=\"\$HOME/.fcp/bin:\$PATH\"" >> "$HOME/.bashrc"
     echo "fi" >> "$HOME/.bashrc"
     
     echo "Configuration ajoutée à ~/.bashrc"
+    echo "Installation terminée. Pour activer l'autocomplétion immédiatement, exécutez:"
+    echo "  source ~/.bashrc"
 else
     echo "Configuration déjà présente dans ~/.bashrc"
 fi
 
-echo "Installation terminée. Pour activer l'autocomplétion immédiatement, exécutez:"
-echo "  source ~/.bashrc"
